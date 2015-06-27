@@ -1,0 +1,58 @@
+/**
+ * Sample4: bluetooth test
+ * Modified the baudrate to 115200 with uart1.sendString( "AT+BAUD8" );
+ */
+ 
+#include "tivaCppLibrary/delays.hpp"
+
+#include "tivaCpp/include/Clock.hpp"
+#include "tivaCpp/include/Gpio.hpp"
+#include "tivaCpp/include/Uart.hpp"
+
+#include "tivaCppLibrary/interrupts.hpp"
+#include "tivaCpp/GProjectCore/GObjectContainer.hpp"
+
+clock::Clock systemClock;
+
+Gpio::Pin led( Gpio::port::GPIOPortF_APB, Gpio::pin::pin2 );
+
+Gpio::Pin pinUART1rx( Gpio::port::GPIOPortB_APB, Gpio::pin::pin0 );
+Gpio::Pin pinUART1tx( Gpio::port::GPIOPortB_APB, Gpio::pin::pin1 );
+
+uart::Uart uart1( uart::uartModule::UART1 );
+
+int main()
+{
+	systemClock.config( clock::config::clockSource::mainOscilator,
+						clock::config::clockRate::clock_80Mhz );
+
+	// Enable GPIOF-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOF,
+								 clock::config::gpioBusType::APBbus );
+	// Enable GPIOA-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOB,
+								 clock::config::gpioBusType::APBbus );
+	// Enable the UART0 clock
+	systemClock.enableUartClock( clock::peripheral::uart::UART1 );
+
+	led.enableDigitalFunc();
+	led.setMode( Gpio::config::mode::gpio );
+	led.setIOMode( Gpio::config::ioMode::output );
+
+	pinUART1rx.enableDigitalFunc();
+	pinUART1rx.setMode( Gpio::config::mode::alternate );
+	pinUART1rx.setAlternateMode( Gpio::config::altModes::alt1 );
+
+	pinUART1tx.enableDigitalFunc();
+	pinUART1tx.setMode( Gpio::config::mode::alternate );
+	pinUART1tx.setAlternateMode( Gpio::config::altModes::alt1 );
+
+	uart1.configUart( uart::config::baudrate::BAUDS_115200 );
+
+	while(1)
+	{
+		led.toggle();
+
+		delays::delay_ms( 100 );
+	}
+}

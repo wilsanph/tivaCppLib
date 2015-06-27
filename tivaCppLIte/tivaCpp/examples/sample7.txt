@@ -1,0 +1,111 @@
+
+
+#include "tivaCppLibrary/delays.hpp"
+
+#include "tivaCpp/include/Clock.hpp"
+#include "tivaCpp/include/Gpio.hpp"
+#include "tivaCpp/include/Spi.hpp"
+
+#include "tivaCppLibrary/interrupts.hpp"
+#include "tivaCppLibrary/include/Core.hpp"
+
+////#include "tivaCpp/include/Uart.hpp"
+
+////#include "tivaCppLibrary/interrupts.hpp"
+////#include "tivaCppLibrary/include/Core.hpp"
+////#include "tivaCpp/GProjectCore/GObjectContainer.hpp"
+////#include "tivaCpp/libs/GServo.hpp"
+////#include "tivaCpp/Gaby/SpiderRobot/GLegsController.hpp"
+
+clock::Clock systemClock;
+
+Gpio::Pin blueLed( Gpio::port::GPIOPortF_APB, Gpio::pin::pin2 );
+
+Gpio::Pin spi0Clk( Gpio::port::GPIOPortA_APB, Gpio::pin::pin2 );
+Gpio::Pin spi0Fss( Gpio::port::GPIOPortA_APB, Gpio::pin::pin3 );
+Gpio::Pin spi0Rx( Gpio::port::GPIOPortA_APB, Gpio::pin::pin4 );
+Gpio::Pin spi0Tx( Gpio::port::GPIOPortA_APB, Gpio::pin::pin5 );
+
+u8 rxBuffer[10] = {0,0,0,0,0,0,0,0,0,0};
+u8 rxByteCounter = 0;
+
+int main()
+{
+	systemClock.config( clock::config::clockSource::mainOscilator,
+						clock::config::clockRate::clock_80Mhz );
+
+	// Enable GPIOF-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOF,
+								 clock::config::gpioBusType::APBbus );
+	// Enable GPIOA-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOA,
+								 clock::config::gpioBusType::APBbus );
+
+	// Enable the SPI0 clock
+	systemClock.enableSpiClock( clock::peripheral::spi::SPI0 );
+
+	blueLed.enableDigitalFunc();
+	blueLed.setMode( Gpio::config::mode::gpio );
+	blueLed.setIOMode( Gpio::config::ioMode::output );
+
+	spi0Clk.enableDigitalFunc();
+	spi0Clk.setMode( Gpio::config::mode::alternate );
+	spi0Clk.setAlternateMode( Gpio::config::altModes::alt2 );
+	spi0Fss.setPullDown();
+
+	spi0Fss.enableDigitalFunc();
+	spi0Fss.setMode( Gpio::config::mode::alternate );
+	spi0Fss.setAlternateMode( Gpio::config::altModes::alt2 );
+	spi0Fss.setPullUp();
+
+	spi0Rx.enableDigitalFunc();
+	spi0Rx.setMode( Gpio::config::mode::alternate );
+	spi0Rx.setAlternateMode( Gpio::config::altModes::alt2 );
+
+	spi0Tx.enableDigitalFunc();
+	spi0Tx.setMode( Gpio::config::mode::alternate );
+	spi0Tx.setAlternateMode( Gpio::config::altModes::alt2 );
+
+	Spi0::configSpi( 2,
+					 Spi::config::mode::SLAVE_OUT_ENABLED,
+					 Spi::config::clockSource::PIOSC_CLOCK,
+					 Spi::config::clockPolarity::IDLE_LOW,
+					 Spi::config::clockPhase::CAPTURE_SECOND_EDGE,
+					 Spi::config::frameFormat::FREESCALE_SPI_FORMAT,
+					 Spi::config::dataSize::BITS_8,
+					 2 );
+
+	Spi0::enableInterrupt( Spi::options::interrupts::RECEIVE_FIFO_INTERRUPT );
+
+	core::IntEnableMaster();
+	core::enableInterrupt( core::interrupts::ssi0 );
+
+	while( 1 )
+	{
+		blueLed.toggle();
+		delays::delay_ms( 200 );
+	}
+}
+
+void interruptFuncs::ssi0rxtx_isr()
+{
+	if ( Spi0::isInterruptAsserted( Spi::options::interrupts::RECEIVE_FIFO_INTERRUPT ) )
+	{
+		Spi0::clearInterrupt( Spi::options::interrupts::RECEIVE_FIFO_INTERRUPT );
+		// Do something here
+
+		while( Spi0::isReceiveFIFOnotEmpty() )
+		{
+			////volatile bool isRxEmpty = Spi0::isReceiveFIFOnotEmpty();
+			rxBuffer[rxByteCounter] = Spi0::readByte();
+			rxByteCounter++;
+			if ( rxByteCounter > 9 )
+			{
+				// Has received 10 bytes
+				rxByteCounter = 0;
+			}
+		}
+	}
+}
+
+

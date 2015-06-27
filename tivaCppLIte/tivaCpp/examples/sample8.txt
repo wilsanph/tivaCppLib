@@ -1,0 +1,157 @@
+#include "tivaCppLibrary/delays.hpp"
+
+#include "tivaCpp/include/Clock.hpp"
+#include "tivaCpp/include/Gpio.hpp"
+
+#include "tivaCppLibrary/interrupts.hpp"
+#include "tivaCpp/include/Uart.hpp"
+
+#include "tivaCpp/include/Timer.hpp"
+#include "tivaCpp/include/Qei.hpp"
+
+#include "tivaCppLibrary/include/Core.hpp"
+
+clock::Clock systemClock;
+
+Gpio::Pin blueLed( Gpio::port::GPIOPortF_APB, Gpio::pin::pin2 );
+// PC4-> PWM WideTimer0 sub0
+Gpio::Pin pc4( Gpio::port::GPIOPortC_APB, Gpio::pin::pin4 );
+// PC5-PC6 -> QEI1 module
+Gpio::Pin pc5( Gpio::port::GPIOPortC_APB, Gpio::pin::pin5 );
+Gpio::Pin pc6( Gpio::port::GPIOPortC_APB, Gpio::pin::pin6 );
+// PA0-PA1 -> UART0 module
+Gpio::Pin pa0( Gpio::port::GPIOPortA_APB, Gpio::pin::pin0 );
+Gpio::Pin pa1( Gpio::port::GPIOPortA_APB, Gpio::pin::pin1 );
+
+GpTimer::Pwm motor( GpTimer::timerModule::TIMER0_WIDE,
+					GpTimer::subtimer::SUBTIMER_A );
+
+qei::Qei encoder( qei::qeiModule::QEI1 );
+
+uart::Uart port( uart::uartModule::UART0 );
+
+GpTimer::Timer timer0( GpTimer::timerModule::TIMER0_SIMPLE,
+					   GpTimer::subtimer::SUBTIMER_A );
+
+float duty = 0.2;
+i32 countReg = 0;
+i32 speedReg = 0;
+
+bool go = false;
+
+int main()
+{
+	systemClock.config( clock::config::clockSource::mainOscilator,
+						clock::config::clockRate::clock_80Mhz );
+
+	// Enable GPIOF-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOF,
+								 clock::config::gpioBusType::APBbus );
+	// Enable GPIOC-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOC,
+								 clock::config::gpioBusType::APBbus );
+	// Enable GPIOA-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOA,
+								 clock::config::gpioBusType::APBbus );
+	// Enable WTIMER0 clock
+	systemClock.enableWideTimerClock( clock::peripheral::timer::wideTimer::WTIMER0 );
+	// Enable QEI1 clock
+	systemClock.enableQEIClock( clock::peripheral::qei::QEI1 );
+	// Enable UART0 clock
+	systemClock.enableUartClock( clock::peripheral::uart::UART0 );
+	// Enable WTIMER0 clock
+	systemClock.enableSimpleTimerClock( clock::peripheral::timer::simpleTimer::TIMER0 );
+
+	blueLed.enableDigitalFunc();
+	blueLed.setMode( Gpio::config::mode::gpio );
+	blueLed.setIOMode( Gpio::config::ioMode::output );
+
+	pc4.enableDigitalFunc();
+	pc4.setMode( Gpio::config::mode::alternate );
+	pc4.setAlternateMode( Gpio::config::altModes::alt7 );
+
+	pc5.enableDigitalFunc();
+	pc5.setMode( Gpio::config::mode::alternate );
+	pc5.setAlternateMode( Gpio::config::altModes::alt6 );
+
+	pc6.enableDigitalFunc();
+	pc6.setMode( Gpio::config::mode::alternate );
+	pc6.setAlternateMode( Gpio::config::altModes::alt6 );
+
+	pa0.enableDigitalFunc();
+	pa0.setMode( Gpio::config::mode::alternate );
+	pa0.setAlternateMode( Gpio::config::altModes::alt1 );
+
+	pa1.enableDigitalFunc();
+	pa1.setMode( Gpio::config::mode::alternate );
+	pa1.setAlternateMode( Gpio::config::altModes::alt1 );
+
+	motor.configPWM( 50,
+					 0.2,
+					 GpTimer::config::pwmConfig::outputLevel::normal );
+
+	encoder.configQei( qei::config::stallOnDebugger::DONT_STALL,
+					   qei::config::velocityPredivider::DIV_1,
+					   qei::config::capVelocity::CAPTURE_VEL,
+					   qei::config::captureMode::MODE2 );
+	encoder.setTimer( 800000 );
+	encoder.enableQei();
+
+	port.configUart( uart::config::baudrate::BAUDS_115200 );
+	port.enableUart();
+
+	timer0.config( 10000, 1 );
+	timer0.enableTimer();
+
+	core::enableInterrupt( core::interrupts::uart0 );
+	core::enableInterrupt( core::interrupts::timer0a_simple );
+
+	core::IntEnableMaster();
+
+	while( 1 )
+	{
+		blueLed.toggle();
+
+		motor.setDuty( duty );
+		//countReg = encoder.getCount();
+		speedReg = encoder.getSpeedReg();
+
+		delays::delay_ms( 100 );
+	}
+}
+
+
+void interruptFuncs::uart0rxtx_isr()
+{
+	port.clearInterrupts( uart::config::interrupts::RECEIVE_INT );
+
+	volatile u8 buffRx = port.read();
+	if ( buffRx == 97 )
+	{
+		go = true;
+	}
+	else if ( buffRx == 122 )
+	{
+		go = false;
+	}
+}
+
+
+void interruptFuncs::timer0SubA_isr()
+{
+	timer0.clearInterrupt( GpTimer::config::timerConfig::interruptFlag::timeoutSubA );
+
+	if ( go )
+	{
+		port.send( ( u8 )( encoder.getSpeedReg() ) );
+//		port.send( 97 );
+	}
+}
+
+
+
+
+
+
+
+

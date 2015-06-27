@@ -1,0 +1,6 @@
+
+
+Pass the configuration parameters in the constructor of the driver objects, and ...
+do the initialization un the init functions.
+-> DRAWBACK: you have to store the configuration varibles in instance variables:
+  -> Then, use (waste) more RAM

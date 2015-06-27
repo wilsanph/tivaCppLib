@@ -1,0 +1,84 @@
+#include "tivaCppLibrary/delays.hpp"
+
+#include "tivaCpp/include/Clock.hpp"
+#include "tivaCpp/include/Gpio.hpp"
+#include "tivaCpp/include/Qei.hpp"
+#include "tivaCpp/include/Timer.hpp"
+
+#include "tivaCpp/GProjectCore/GObjectContainer.hpp"
+
+clock::Clock systemClock;
+
+Gpio::Pin led( Gpio::port::GPIOPortF_APB, Gpio::pin::pin2 );
+
+Gpio::Pin pinPWM( Gpio::port::GPIOPortC_APB, Gpio::pin::pin4 );
+
+gObject::GObjectContainer motor;
+
+Gpio::Pin pinQEI1phA( Gpio::port::GPIOPortC_APB, Gpio::pin::pin5 );
+Gpio::Pin pinQEI1phB( Gpio::port::GPIOPortC_APB, Gpio::pin::pin6 );
+
+gObject::GObjectContainer qei1;
+
+u32 qeiCount = 0;
+
+float duty = 0;
+
+int main()
+{
+	systemClock.config( clock::config::clockSource::mainOscilator,
+						clock::config::clockRate::clock_80Mhz );
+
+	// Enable GPIOF-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOF,
+								 clock::config::gpioBusType::APBbus );
+
+	// Enable GPIOC-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOC,
+								 clock::config::gpioBusType::APBbus );
+
+	// Enable the QEI clock
+	systemClock.enableQEIClock( clock::peripheral::qei::QEI1 );
+
+	// Enable the WTIMER0 clock
+	systemClock.enableWideTimerClock( clock::peripheral::timer::wideTimer::WTIMER0 );
+
+	pinPWM.enableDigitalFunc();
+	pinPWM.setMode( Gpio::config::mode::alternate );
+	pinPWM.setAlternateMode( Gpio::config::altModes::alt7 );
+
+	led.enableDigitalFunc();
+	led.setMode( Gpio::config::mode::gpio );
+	led.setIOMode( Gpio::config::ioMode::output );
+
+	pinQEI1phA.enableDigitalFunc();
+	pinQEI1phA.setMode( Gpio::config::mode::alternate );
+	pinQEI1phA.setAlternateMode( Gpio::config::altModes::alt6 );
+
+	pinQEI1phB.enableDigitalFunc();
+	pinQEI1phB.setMode( Gpio::config::mode::alternate );
+	pinQEI1phB.setAlternateMode( Gpio::config::altModes::alt6 );
+
+	qei1.reset( new qei::Qei( qei::qeiModule::QEI1 ) );
+
+	GCast( qei::Qei*, qei1 )->configQei( qei::config::stallOnDebugger::DONT_STALL,
+										 qei::config::velocityPredivider::DIV_1,
+										 qei::config::capVelocity::DONT_CAPTURE_VEL,
+										 qei::config::captureMode::MODE1 );
+	GCast( qei::Qei*, qei1 )->enableQei();
+
+	motor.reset( new GpTimer::Pwm( GpTimer::timerModule::TIMER0_WIDE,
+								   GpTimer::subtimer::SUBTIMER_A ) );
+	GCast( GpTimer::Pwm*, motor )->configPWM( 50,
+											  duty,
+											  GpTimer::config::pwmConfig::outputLevel::normal );
+
+	while(1)
+	{
+		led.toggle();
+
+		qeiCount = GCast( qei::Qei*, qei1 )->getCount();
+		GCast( GpTimer::Pwm*, motor )->setDuty( duty );
+		delays::delay_ms( 100 );
+	}
+}

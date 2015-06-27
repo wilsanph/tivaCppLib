@@ -1,0 +1,99 @@
+
+
+#include "tivaCppLibrary/delays.hpp"
+
+#include "tivaCpp/include/Clock.hpp"
+#include "tivaCpp/include/Gpio.hpp"
+#include "tivaCpp/include/Uart.hpp"
+
+#include "tivaCppLibrary/interrupts.hpp"
+#include "tivaCppLibrary/include/Core.hpp"
+#include "tivaCpp/GProjectCore/GObjectContainer.hpp"
+#include "tivaCpp/libs/GServo.hpp"
+
+clock::Clock systemClock;
+
+Gpio::Pin led( Gpio::port::GPIOPortF_APB, Gpio::pin::pin2 );
+
+Gpio::Pin pinUART1rx( Gpio::port::GPIOPortB_APB, Gpio::pin::pin0 );
+Gpio::Pin pinUART1tx( Gpio::port::GPIOPortB_APB, Gpio::pin::pin1 );
+
+uart::Uart uart1( uart::uartModule::UART1 );
+
+gObject::GObjectContainer servo1;
+
+float angle = 30;
+
+int main()
+{
+	systemClock.config( clock::config::clockSource::mainOscilator,
+						clock::config::clockRate::clock_80Mhz );
+
+	// Enable GPIOF-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOF,
+								 clock::config::gpioBusType::APBbus );
+	// Enable GPIOB-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOB,
+								 clock::config::gpioBusType::APBbus );
+
+	// Enable GPIOC-APB clock
+	systemClock.enableGpioClock( clock::peripheral::gpio::GPIOC,
+								 clock::config::gpioBusType::APBbus );
+
+	// Enable the UART0 clock
+	systemClock.enableUartClock( clock::peripheral::uart::UART1 );
+
+	// Enable the WIDETIMER0 clock
+	systemClock.enableWideTimerClock( clock::peripheral::timer::wideTimer::WTIMER0 );
+
+	servo1.reset( new libs::servo::GServo( Gpio::port::GPIOPortC_APB,
+										   Gpio::pin::pin4,
+										   GpTimer::timerModule::TIMER0_WIDE,
+										   GpTimer::subtimer::SUBTIMER_A,
+										   20000 ) );
+
+	GCast( libs::servo::GServo*, servo1 )->config( 600, 2000, 0, 210 );
+
+	led.enableDigitalFunc();
+	led.setMode( Gpio::config::mode::gpio );
+	led.setIOMode( Gpio::config::ioMode::output );
+
+	pinUART1rx.enableDigitalFunc();
+	pinUART1rx.setMode( Gpio::config::mode::alternate );
+	pinUART1rx.setAlternateMode( Gpio::config::altModes::alt1 );
+
+	pinUART1tx.enableDigitalFunc();
+	pinUART1tx.setMode( Gpio::config::mode::alternate );
+	pinUART1tx.setAlternateMode( Gpio::config::altModes::alt1 );
+
+	uart1.configUart( uart::config::baudrate::BAUDS_9600 );
+
+	core::enableInterrupt( core::interrupts::uart1 );
+	core::IntEnableMaster();
+
+	while(1)
+	{
+		led.toggle();
+
+		uart1.sendString( ":D \n\r" );
+		uart1.sendString( ":( \n\r" );
+
+		GCast( libs::servo::GServo*, servo1 )->setAngle( angle );
+
+		delays::delay_ms( 100 );
+	}
+}
+
+void interruptFuncs::uart1rxtx_isr()
+{
+	uart1.clearInterrupts( uart::config::interrupts::RECEIVE_INT );
+	volatile u8 rxByte = uart1.read();
+	if ( rxByte == 'g' )
+	{
+		angle = 210;
+	}
+	else if ( rxByte == 'w' )
+	{
+		angle = 0;
+	}
+}
